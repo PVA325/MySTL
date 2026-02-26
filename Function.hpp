@@ -4,56 +4,52 @@
 #include <optional>
 #include <typeinfo>
 
-template<typename T>
-struct Debug {
-  Debug() = delete;
+namespace function_detail {
+  template<bool IsMove, typename Ret, typename... Args>
+  struct ControlBlockMethodsPtrs {};
+
+  template<typename Ret, typename... Args>
+  struct ControlBlockMethodsPtrs<false, Ret, Args...> {
+    using copy_ptr_t = void*(*)(void*, void*);
+    using move_ptr_t = void*(*)(void*, void*);
+    using destroy_ptr_t = void(*)(void* const);
+    copy_ptr_t copy_ptr;
+    move_ptr_t move_ptr;
+    destroy_ptr_t destroy_ptr;
+    const std::type_info& type_info;
+    const bool owns_func;
+
+    ControlBlockMethodsPtrs(): move_ptr(nullptr), destroy_ptr(nullptr) {};
+    ControlBlockMethodsPtrs(const copy_ptr_t& copy_ptr, const move_ptr_t& move_ptr,
+                            const destroy_ptr_t& destroy_ptr, const std::type_info& type_info, bool owns_func):
+      copy_ptr(copy_ptr), move_ptr(move_ptr), destroy_ptr(destroy_ptr), type_info(type_info), owns_func(owns_func) {};
+
+    ControlBlockMethodsPtrs(const ControlBlockMethodsPtrs& other) = default;
+    ControlBlockMethodsPtrs(ControlBlockMethodsPtrs&& other) = default;
+    ControlBlockMethodsPtrs& operator=(const ControlBlockMethodsPtrs& other) = default;
+    ~ControlBlockMethodsPtrs() = default;
+  };
+  template<typename Ret, typename... Args>
+  struct ControlBlockMethodsPtrs<true, Ret, Args...> {
+    using copy_ptr_t = void*(*)(void*, void*);
+    using move_ptr_t = void*(*)(void*, void*);
+    using destroy_ptr_t = void(*)(void* const);
+    move_ptr_t move_ptr;
+    destroy_ptr_t destroy_ptr;
+    const std::type_info& type_info;
+    const bool owns_func;
+
+    ControlBlockMethodsPtrs(): move_ptr(nullptr), destroy_ptr(nullptr) {};
+    ControlBlockMethodsPtrs(std::nullptr_t, const move_ptr_t& move_ptr,
+                            const destroy_ptr_t& destroy_ptr, const std::type_info& type_info, bool owns_func):
+      move_ptr(move_ptr), destroy_ptr(destroy_ptr), type_info(type_info), owns_func(owns_func) {};
+
+    ControlBlockMethodsPtrs(const ControlBlockMethodsPtrs& other) = default;
+    ControlBlockMethodsPtrs(ControlBlockMethodsPtrs&& other) = default;
+    ControlBlockMethodsPtrs& operator=(const ControlBlockMethodsPtrs& other) = default;
+    ~ControlBlockMethodsPtrs() = default;
+  };
 };
-
-template<bool IsMove, typename Ret, typename... Args>
-struct ControlBlockMethodsPtrs {};
-
-template<typename Ret, typename... Args>
-struct ControlBlockMethodsPtrs<false, Ret, Args...> {
-  using copy_ptr_t = void*(*)(void*, void*);
-  using move_ptr_t = void*(*)(void*, void*);
-  using destroy_ptr_t = void(*)(void* const);
-  copy_ptr_t copy_ptr;
-  move_ptr_t move_ptr;
-  destroy_ptr_t destroy_ptr;
-  const std::type_info& type_info;
-  const bool owns_func;
-
-  ControlBlockMethodsPtrs(): move_ptr(nullptr), destroy_ptr(nullptr) {};
-  ControlBlockMethodsPtrs(const copy_ptr_t& copy_ptr, const move_ptr_t& move_ptr,
-                          const destroy_ptr_t& destroy_ptr, const std::type_info& type_info, bool owns_func):
-    copy_ptr(copy_ptr), move_ptr(move_ptr), destroy_ptr(destroy_ptr), type_info(type_info), owns_func(owns_func) {};
-
-  ControlBlockMethodsPtrs(const ControlBlockMethodsPtrs& other) = default;
-  ControlBlockMethodsPtrs(ControlBlockMethodsPtrs&& other) = default;
-  ControlBlockMethodsPtrs& operator=(const ControlBlockMethodsPtrs& other) = default;
-  ~ControlBlockMethodsPtrs() = default;
-};
-template<typename Ret, typename... Args>
-struct ControlBlockMethodsPtrs<true, Ret, Args...> {
-  using copy_ptr_t = void*(*)(void*, void*);
-  using move_ptr_t = void*(*)(void*, void*);
-  using destroy_ptr_t = void(*)(void* const);
-  move_ptr_t move_ptr;
-  destroy_ptr_t destroy_ptr;
-  const std::type_info& type_info;
-  const bool owns_func;
-
-  ControlBlockMethodsPtrs(): move_ptr(nullptr), destroy_ptr(nullptr) {};
-  ControlBlockMethodsPtrs(std::nullptr_t, const move_ptr_t& move_ptr,
-                          const destroy_ptr_t& destroy_ptr, const std::type_info& type_info, bool owns_func):
-    move_ptr(move_ptr), destroy_ptr(destroy_ptr), type_info(type_info), owns_func(owns_func) {};
-
-  ControlBlockMethodsPtrs(const ControlBlockMethodsPtrs& other) = default;
-  ControlBlockMethodsPtrs(ControlBlockMethodsPtrs&& other) = default;
-  ControlBlockMethodsPtrs& operator=(const ControlBlockMethodsPtrs& other) = default;
-  ~ControlBlockMethodsPtrs() = default;
-};
-
 
 template <bool IsMoveOnly, typename T>
 class FunctionBase {};
@@ -104,10 +100,10 @@ protected:
   static auto Invoke(F* const func, Args... args) -> Ret;
 
   template<typename F, bool own_obj>
-  static ControlBlockMethodsPtrs<IsMoveOnly, Ret, Args...>* get_control_block_F() {
+  static function_detail::ControlBlockMethodsPtrs<IsMoveOnly, Ret, Args...>* get_control_block_F() {
     const std::type_info& cur_inf = typeid(F);
     if constexpr (!IsMoveOnly) {
-      static ControlBlockMethodsPtrs<false, Ret, Args...> block = ControlBlockMethodsPtrs<false, Ret, Args...>(
+      static function_detail::ControlBlockMethodsPtrs<false, Ret, Args...> block = function_detail::ControlBlockMethodsPtrs<false, Ret, Args...>(
         reinterpret_cast<copy_ptr_t>(&FunctionBase::CopyConstructor<F>),
         reinterpret_cast<move_ptr_t>(&FunctionBase::MoveConstrutor < F > ),
         reinterpret_cast<destroy_ptr_t>(&FunctionBase::Destroy < F > ),
@@ -116,7 +112,7 @@ protected:
       );
       return &block;
     } else {
-      static ControlBlockMethodsPtrs<true, Ret, Args...> block = ControlBlockMethodsPtrs<true, Ret, Args...>(
+      static function_detail::ControlBlockMethodsPtrs<true, Ret, Args...> block = function_detail::ControlBlockMethodsPtrs<true, Ret, Args...>(
         nullptr,
         reinterpret_cast<move_ptr_t>(&FunctionBase::MoveConstrutor < F > ),
         reinterpret_cast<destroy_ptr_t>(&FunctionBase::Destroy < F > ),
@@ -131,7 +127,7 @@ protected:
   static constexpr int BUFFER_SIZE = 16;
   void* func_ptr_;
   invoke_ptr_t invoke_ptr_;
-  ControlBlockMethodsPtrs<IsMoveOnly, Ret, Args...>* block_ptr_;
+  function_detail::ControlBlockMethodsPtrs<IsMoveOnly, Ret, Args...>* block_ptr_;
   alignas(max_align_t) char buffer_[BUFFER_SIZE];
 public:
   FunctionBase(std::nullptr_t);
@@ -350,4 +346,3 @@ using Function = FunctionBase<false, T>;
 
 template<typename T>
 using MoveOnlyFunction = FunctionBase<true, T>;
-

@@ -6,40 +6,72 @@
 template<typename Key, typename Val, typename Hash, typename Equal, typename Alloc>
 class UnorderedMap;
 
-template<typename T>
-struct BaseNode {
-  BaseNode* prev;
-  BaseNode* next;
-  BaseNode(): prev(this), next(this) {}
-  BaseNode(BaseNode* prev, BaseNode* next): prev(prev), next(next) {}
+namespace list_detail {
+  template<typename T>
+  struct BaseNode {
+    BaseNode *prev;
+    BaseNode *next;
 
-  ~BaseNode() = default;
-};
+    BaseNode() : prev(this), next(this) {}
 
-template<typename T>
-struct DefaultNode : BaseNode<T> {
-  T val;
-  DefaultNode(): BaseNode<T>() {}
-  DefaultNode(BaseNode<T>* prev, BaseNode<T>* next, const T& val) noexcept(false) : BaseNode<T>(prev, next), val(val) {}
-  DefaultNode(BaseNode<T>* prev, BaseNode<T>* next, T&& val) noexcept(false) : BaseNode<T>(prev, next), val(std::move(val)) {}
+    BaseNode(BaseNode *prev, BaseNode *next) : prev(prev), next(next) {}
 
-  template<typename... Args>
-  DefaultNode(BaseNode<T>* prev, BaseNode<T>* next, Args&&... args) noexcept(false) : BaseNode<T>(prev, next), val(std::forward<Args>(args)...) {}
+    ~BaseNode() = default;
+  };
 
-  DefaultNode(const DefaultNode& other);
-  DefaultNode(DefaultNode&& other) noexcept ;
+  template<typename T>
+  struct DefaultNode : BaseNode<T> {
+    T val;
 
-  DefaultNode& operator=(DefaultNode other);
+    DefaultNode() : BaseNode<T>() {}
 
-  ~DefaultNode() = default;
+    DefaultNode(BaseNode<T> *prev, BaseNode<T> *next, const T &val) noexcept(false): BaseNode<T>(prev, next),
+                                                                                     val(val) {}
+
+    DefaultNode(BaseNode<T> *prev, BaseNode<T> *next, T &&val) noexcept(false): BaseNode<T>(prev, next),
+                                                                                val(std::move(val)) {}
+
+    template<typename... Args>
+    DefaultNode(BaseNode<T> *prev, BaseNode<T> *next, Args &&... args) noexcept(false) : BaseNode<T>(prev, next), val(
+      std::forward<Args>(args)...) {}
+
+    DefaultNode(const DefaultNode &other);
+
+    DefaultNode(DefaultNode &&other) noexcept;
+
+    DefaultNode &operator=(DefaultNode other);
+
+    ~DefaultNode() = default;
+  };
+
+  template<typename T>
+  DefaultNode<T>::DefaultNode(const DefaultNode<T>& other):
+    BaseNode<T>(other.prev, other.next),
+    val(other.val)
+  {}
+
+  template<typename T>
+  DefaultNode<T>::DefaultNode(DefaultNode<T> &&other) noexcept:
+    BaseNode<T>(other.prev, other.next),
+    val(std::move(other.val))
+  {}
+
+
+  template<typename T>
+  DefaultNode<T>& DefaultNode<T>::operator=(DefaultNode<T> other) {
+    std::swap(this->prev, other.prev);
+    std::swap(this->next, other.next);
+    std::swap(this->val, other.val);
+  }
 };
 
 
 template<typename T, typename AllocT = std::allocator<T>>
 class List {
 private:
-  using BaseNodeType = BaseNode<T>;
-  using DefaultNodeType = DefaultNode<T>;
+
+  using BaseNodeType = list_detail::BaseNode<T>;
+  using DefaultNodeType = list_detail::DefaultNode<T>;
   BaseNodeType fake_node_;
   [[no_unique_address]] AllocT alloc_;
 
@@ -189,8 +221,8 @@ public:
   const_reverse_iterator crbegin() const;
   const_reverse_iterator crend() const;
 
-  void erase(iterator it);
-  void insert(iterator it, const T& val);
+  iterator erase(iterator it);
+  iterator insert(iterator it, const T& val);
 
   ~List();
 
@@ -423,7 +455,7 @@ void List<T, AllocT>::assign_from(const List<T, AnotherAllocT>& other) {
   while (cur_other_node != &other.fake_node_) {
     DefaultNodeType* new_node = std::allocator_traits<DefaultNodeAlloc>::allocate(create_alloc, 1);
     try {
-      std::allocator_traits<DefaultNodeAlloc>::construct(create_alloc, new_node, cur_node, &fake_node_, static_cast<const DefaultNode<T>*>(cur_other_node)->val);
+      std::allocator_traits<DefaultNodeAlloc>::construct(create_alloc, new_node, cur_node, &fake_node_, static_cast<const list_detail::DefaultNode<T>*>(cur_other_node)->val);
     } catch (...) {
       std::allocator_traits<DefaultNodeAlloc>::deallocate(create_alloc, new_node, 1);
       DestroyHead(cur_node);
@@ -456,7 +488,7 @@ void List<T, AllocT>::copy_from(const List<T, AnotherAllocT>& other) {
   while (cur_other != &other.fake_node_) {
     DefaultNodeType* new_node = std::allocator_traits<DefaultNodeAlloc>::allocate(node_alloc, 1);
     try {
-      std::allocator_traits<DefaultNodeAlloc>::construct(node_alloc, new_node, cur_node, &fake_node_, static_cast<const DefaultNode<T>*>(cur_other)->val);
+      std::allocator_traits<DefaultNodeAlloc>::construct(node_alloc, new_node, cur_node, &fake_node_, static_cast<const list_detail::DefaultNode<T>*>(cur_other)->val);
     } catch (...) {
       std::allocator_traits<DefaultNodeAlloc>::deallocate(node_alloc, new_node, 1);
       DestroyHead(cur_node);
@@ -558,25 +590,6 @@ AllocT& List<T, AllocT>::get_allocator() { return alloc_; }
 template<typename T, typename AllocT>
 const AllocT& List<T, AllocT>::get_allocator() const { return alloc_; }
 
-template<typename T>
-DefaultNode<T>::DefaultNode(const DefaultNode<T>& other):
-  BaseNode<T>(other.prev, other.next),
-  val(other.val)
-{}
-
-template<typename T>
-DefaultNode<T>::DefaultNode(DefaultNode<T> &&other) noexcept:
-  BaseNode<T>(other.prev, other.next),
-  val(std::move(other.val))
-{}
-
-
-template<typename T>
-DefaultNode<T>& DefaultNode<T>::operator=(DefaultNode<T> other) {
-  std::swap(this->prev, other.prev);
-  std::swap(this->next, other.next);
-  std::swap(this->val, other.val);
-}
 
 template<typename T, typename AllocT>
 template<bool is_const>
@@ -689,10 +702,11 @@ typename List<T, AllocT>::const_reverse_iterator List<T, AllocT>::crend() const 
 }
 
 template<typename T, typename AllocT>
-void List<T, AllocT>::erase(iterator it) {
+auto List<T, AllocT>::erase(iterator it) -> iterator {
   if (it == end()) {
     throw std::out_of_range("Erase out of range");
   }
+  iterator next_el = std::next(it);
   BaseNodeType* prev_ptr = std::prev(it).ptr();
   BaseNodeType* next_ptr = std::next(it).ptr();
 
@@ -705,10 +719,11 @@ void List<T, AllocT>::erase(iterator it) {
   std::allocator_traits<DefaultNodeAlloc>::destroy(node_alloc, static_cast<DefaultNodeType*>(cur_ptr));
   std::allocator_traits<DefaultNodeAlloc>::deallocate(node_alloc, static_cast<DefaultNodeType*>(cur_ptr), 1);
   --size_;
+  return next_el;
 }
 
 template<typename T, typename AllocT>
-void List<T, AllocT>::insert(iterator it, const T& val) {
+auto List<T, AllocT>::insert(iterator it, const T& val) -> iterator {
   BaseNodeType* prev_ptr = std::prev(it).ptr();
   BaseNodeType* cur_ptr = it.ptr();
 
@@ -725,6 +740,7 @@ void List<T, AllocT>::insert(iterator it, const T& val) {
   prev_ptr->next = static_cast<BaseNodeType*>(new_node);
   cur_ptr->prev = static_cast<BaseNodeType*>(new_node);
   ++size_;
+  return std::prev(it);
 }
 
 template<typename T, typename AllocT>

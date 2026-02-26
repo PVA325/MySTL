@@ -3,11 +3,6 @@
 #include <utility>
 
 
-template<typename T>
-struct Debug {
-  Debug() = delete;
-};
-
 template<size_t N, typename... Args>
 struct GetType {};
 
