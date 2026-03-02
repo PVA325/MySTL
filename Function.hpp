@@ -12,17 +12,16 @@ namespace function_detail {
   struct ControlBlockMethodsPtrs<false, Ret, Args...> {
     using copy_ptr_t = void*(*)(void*, void*);
     using move_ptr_t = void*(*)(void*, void*);
-    using destroy_ptr_t = void(*)(void* const);
+    using destroy_ptr_t = void(*)(void*, bool);
     copy_ptr_t copy_ptr;
     move_ptr_t move_ptr;
     destroy_ptr_t destroy_ptr;
     const std::type_info& type_info;
-    const bool owns_func;
 
     ControlBlockMethodsPtrs(): move_ptr(nullptr), destroy_ptr(nullptr) {};
     ControlBlockMethodsPtrs(const copy_ptr_t& copy_ptr, const move_ptr_t& move_ptr,
-                            const destroy_ptr_t& destroy_ptr, const std::type_info& type_info, bool owns_func):
-      copy_ptr(copy_ptr), move_ptr(move_ptr), destroy_ptr(destroy_ptr), type_info(type_info), owns_func(owns_func) {};
+                            const destroy_ptr_t& destroy_ptr, const std::type_info& type_info):
+      copy_ptr(copy_ptr), move_ptr(move_ptr), destroy_ptr(destroy_ptr), type_info(type_info) {};
 
     ControlBlockMethodsPtrs(const ControlBlockMethodsPtrs& other) = default;
     ControlBlockMethodsPtrs(ControlBlockMethodsPtrs&& other) = default;
@@ -33,16 +32,15 @@ namespace function_detail {
   struct ControlBlockMethodsPtrs<true, Ret, Args...> {
     using copy_ptr_t = void*(*)(void*, void*);
     using move_ptr_t = void*(*)(void*, void*);
-    using destroy_ptr_t = void(*)(void* const);
+    using destroy_ptr_t = void(*)(void*, bool);
     move_ptr_t move_ptr;
     destroy_ptr_t destroy_ptr;
     const std::type_info& type_info;
-    const bool owns_func;
 
     ControlBlockMethodsPtrs(): move_ptr(nullptr), destroy_ptr(nullptr) {};
     ControlBlockMethodsPtrs(std::nullptr_t, const move_ptr_t& move_ptr,
-                            const destroy_ptr_t& destroy_ptr, const std::type_info& type_info, bool owns_func):
-      move_ptr(move_ptr), destroy_ptr(destroy_ptr), type_info(type_info), owns_func(owns_func) {};
+                            const destroy_ptr_t& destroy_ptr, const std::type_info& type_info):
+      move_ptr(move_ptr), destroy_ptr(destroy_ptr), type_info(type_info) {};
 
     ControlBlockMethodsPtrs(const ControlBlockMethodsPtrs& other) = default;
     ControlBlockMethodsPtrs(ControlBlockMethodsPtrs&& other) = default;
@@ -71,53 +69,48 @@ protected:
   constexpr static bool is_FunctionBase_v = is_FunctionBase<T>::value;
   template<typename T>
   constexpr static bool is_reference_wrapper_v = is_reference_wrapper<T>::value;
-
 protected:
-  using invoke_ptr_t = Ret(*)(void* const, Args...);
-  using copy_ptr_t = void*(*)(void*, void*);
-  using move_ptr_t = void*(*)(void*, void*);
-  using destroy_ptr_t = void(*)(void* const);
+  using invoke_ptr_t = Ret(*)(void*, Args...);
 
   static void SwapFuntions(FunctionBase& f, FunctionBase& s) {
     std::swap(f.func_ptr_, s.func_ptr_);
     std::swap(f.block_ptr_, s.block_ptr_);
     std::swap(f.invoke_ptr_, s.invoke_ptr_);
+    std::swap(f.uses_local_storage_, s.uses_local_storage_);
   }
-
 
 protected:
   template<typename F>
-  static F* CopyConstructor(F* const func_copy_from, F* func_dest)
+  static void* CopyConstructor(void* func_copy_from, void* func_dest)
   requires(!IsMoveOnly);
   template<typename F>
-  static F* CopyConstructor(F* const func_copy_from, F* func_dest)
+  static void* CopyConstructor(void* func_copy_from, void* func_dest)
   requires(IsMoveOnly) = delete;
   template<typename F>
-  static F* MoveConstrutor(F* func_move_from, F* func_dest);
+  static void* MoveConstrutor(void* func_move_from, void* func_dest);
   template<typename F>
-  static void Destroy(F* func);
+  static void Destroy(void* func, bool uses_local_storage);
   template<typename F>
-  static auto Invoke(F* const func, Args... args) -> Ret;
+  static auto Invoke(void* func, Args... args) -> Ret;
 
-  template<typename F, bool own_obj>
+
+  template<typename F>
   static function_detail::ControlBlockMethodsPtrs<IsMoveOnly, Ret, Args...>* get_control_block_F() {
     const std::type_info& cur_inf = typeid(F);
     if constexpr (!IsMoveOnly) {
       static function_detail::ControlBlockMethodsPtrs<false, Ret, Args...> block = function_detail::ControlBlockMethodsPtrs<false, Ret, Args...>(
-        reinterpret_cast<copy_ptr_t>(&FunctionBase::CopyConstructor<F>),
-        reinterpret_cast<move_ptr_t>(&FunctionBase::MoveConstrutor < F > ),
-        reinterpret_cast<destroy_ptr_t>(&FunctionBase::Destroy < F > ),
-        cur_inf,
-        own_obj
+        &FunctionBase::CopyConstructor< F >,
+        &FunctionBase::MoveConstrutor< F >,
+        &FunctionBase::Destroy< F >,
+        cur_inf
       );
       return &block;
     } else {
       static function_detail::ControlBlockMethodsPtrs<true, Ret, Args...> block = function_detail::ControlBlockMethodsPtrs<true, Ret, Args...>(
         nullptr,
-        reinterpret_cast<move_ptr_t>(&FunctionBase::MoveConstrutor < F > ),
-        reinterpret_cast<destroy_ptr_t>(&FunctionBase::Destroy < F > ),
-        cur_inf,
-        own_obj
+        &FunctionBase::MoveConstrutor < F >,
+        &FunctionBase::Destroy < F >,
+        cur_inf
       );
       return &block;
     }
@@ -128,7 +121,8 @@ protected:
   void* func_ptr_;
   invoke_ptr_t invoke_ptr_;
   function_detail::ControlBlockMethodsPtrs<IsMoveOnly, Ret, Args...>* block_ptr_;
-  alignas(max_align_t) char buffer_[BUFFER_SIZE];
+  alignas(std::max_align_t) char buffer_[BUFFER_SIZE];
+  bool uses_local_storage_;
 public:
   FunctionBase(std::nullptr_t);
   FunctionBase(): FunctionBase(nullptr) {}
@@ -148,8 +142,6 @@ public:
   template<typename Func>
   auto operator=(Func &&func) -> FunctionBase &
   requires(!is_FunctionBase_v<std::remove_cvref_t<Func>>);
-  template<typename Func>
-  auto operator=(std::reference_wrapper<Func>& other) -> FunctionBase&;
 
   operator bool() const;
 
@@ -181,32 +173,24 @@ auto FunctionBase<IsMoveOnly, Ret(Args...)>::target_type() const -> const std::t
 template<bool IsMoveOnly, typename Ret, typename... Args>
 template<typename T>
 auto FunctionBase<IsMoveOnly, Ret(Args...)>::target() const -> const T * {
-  return reinterpret_cast<const T*>(func_ptr_);
+  if (!Empty() && block_ptr_->type_info == typeid(T)) {
+    return static_cast<const T*>(func_ptr_);
+  }
+  return nullptr;
 }
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 template<typename T>
 auto FunctionBase<IsMoveOnly, Ret(Args...)>::target() -> T * {
-  return reinterpret_cast<T*>(func_ptr_);
+  if (!Empty() && block_ptr_->type_info == typeid(T)) {
+    return static_cast<T*>(func_ptr_);
+  }
+  return nullptr;
 }
-
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 FunctionBase<IsMoveOnly, Ret(Args...)>::operator bool() const {
   return (invoke_ptr_ != nullptr);
-}
-
-template<bool IsMoveOnly, typename Ret, typename... Args>
-template<typename Func>
-auto FunctionBase<IsMoveOnly, Ret(Args...)>::operator=(std::reference_wrapper<Func>& func) -> FunctionBase & {
-  if (!Empty() && block_ptr_->owns_func) {
-    block_ptr_->destroy_ptr(func_ptr_);
-  }
-  func_ptr_ = &func;
-  block_ptr_ = get_control_block_F<std::reference_wrapper<Func>, false>();
-  invoke_ptr_ = reinterpret_cast<invoke_ptr_t>(&FunctionBase::Invoke< std::reference_wrapper<Func> >);
-
-  return *this;
 }
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
@@ -224,12 +208,13 @@ FunctionBase<IsMoveOnly, Ret(Args...)>::FunctionBase(const FunctionBase &other)
 requires(!IsMoveOnly):
   invoke_ptr_(other.invoke_ptr_),
   block_ptr_(other.block_ptr_),
-  func_ptr_(nullptr) {
+  func_ptr_(nullptr),
+  uses_local_storage_(other.uses_local_storage_) {
   if (other.Empty()) {
     return;
   }
 
-  if (other.func_ptr_ == static_cast<const void*>(other.buffer_)) {
+  if (other.uses_local_storage_) {
     func_ptr_ = buffer_;
   }
   func_ptr_ = block_ptr_->copy_ptr(other.func_ptr_, func_ptr_);
@@ -239,81 +224,89 @@ template<bool IsMoveOnly, typename Ret, typename... Args>
 FunctionBase<IsMoveOnly, Ret(Args...)>::FunctionBase(FunctionBase &&other):
   invoke_ptr_(other.invoke_ptr_),
   block_ptr_(other.block_ptr_),
-  func_ptr_(nullptr) {
+  func_ptr_(nullptr),
+  uses_local_storage_(other.uses_local_storage_) {
   if (other.Empty()) {
     return;
   }
 
-  if (other.func_ptr_ == other.buffer_) {
+  if (other.uses_local_storage_) {
     func_ptr_ = buffer_;
     func_ptr_ = block_ptr_->move_ptr(other.func_ptr_, func_ptr_);
+
+    other.block_ptr_->destroy_ptr(other.func_ptr_, other.uses_local_storage_);
+    other.func_ptr_ = nullptr;
   } else {
     func_ptr_ = other.func_ptr_,
-      other.func_ptr_ = nullptr;
+    other.func_ptr_ = nullptr;
   }
 
   other.block_ptr_ = nullptr;
   other.invoke_ptr_ = nullptr;
+  other.uses_local_storage_ = false;
 }
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 FunctionBase<IsMoveOnly, Ret(Args...)>::FunctionBase(std::nullptr_t):
   func_ptr_(nullptr),
   invoke_ptr_(nullptr),
-  block_ptr_(nullptr) {}
+  block_ptr_(nullptr),
+  uses_local_storage_(false) {}
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 template<typename F>
-F* FunctionBase<IsMoveOnly, Ret(Args...)>::MoveConstrutor(F *func_move_from, F *func_dest) {
+void* FunctionBase<IsMoveOnly, Ret(Args...)>::MoveConstrutor(void *func_move_from, void *func_dest) {
+  F* src_F = static_cast<F*>(func_move_from);
+  F* dst_F = static_cast<F*>(func_dest);
   if (func_dest != nullptr) {
-    new (func_dest) F(std::move(*func_move_from));
+    new (dst_F) F(std::move(*src_F));
   } else {
-    func_dest = new F(std::move(*func_move_from));
+    dst_F = new F(std::move(*src_F));
   }
-  return func_dest;
+  return static_cast<void*>(dst_F);
 }
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 template<typename F>
-F* FunctionBase<IsMoveOnly, Ret(Args...)>::CopyConstructor(F* const func_copy_from, F* func_dest)
+void* FunctionBase<IsMoveOnly, Ret(Args...)>::CopyConstructor(void* func_copy_from, void* func_dest)
 requires(!IsMoveOnly) {
+  F* func_dest_F = static_cast<F*>(func_dest);
+  F* func_src_F = static_cast<F*>(func_copy_from);
   if (func_dest != nullptr) {
-    new (func_dest) F(*func_copy_from);
+    new (func_dest_F) F(*func_src_F);
   } else {
-    func_dest = new F(*func_copy_from);
+    func_dest_F = new F(*func_src_F);
   }
-  return func_dest;
+  return static_cast<void*>(func_dest_F);
 }
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 template<typename Func>
 FunctionBase<IsMoveOnly, Ret(Args...)>::FunctionBase(Func &&func)
 requires(!is_FunctionBase_v<std::remove_cvref_t<Func>>) {
-  using FuncType = typename std::remove_reference_t< Func>;
-  constexpr bool own_func = !is_reference_wrapper_v< std::remove_reference_t<Func> >;
+  using FuncType = std::remove_cvref_t<Func>;
+  using StoredType = FuncType;
 
-  invoke_ptr_ = reinterpret_cast<invoke_ptr_t>(&FunctionBase::Invoke< FuncType >); // reinterpret_cast??
-  block_ptr_ = get_control_block_F<FuncType, own_func>();
-  if (!own_func) {
-    func_ptr_ = &func;
-    return;
-  }
+  invoke_ptr_ = &FunctionBase::Invoke<StoredType>;
+  block_ptr_ = get_control_block_F<StoredType>();
 
-  func_ptr_ = nullptr;
-  if constexpr (sizeof(FuncType) < BUFFER_SIZE) {
-    func_ptr_ = buffer_;
-  }
+  constexpr bool fits = (sizeof(StoredType) <= BUFFER_SIZE) &&
+                        (alignof(StoredType) <= alignof(decltype(buffer_)));
+
+  void* dest = (fits ? static_cast<void*>(buffer_) : nullptr);
+
   if constexpr (std::is_lvalue_reference_v<Func>) {
-    func_ptr_ = block_ptr_->copy_ptr(&func, func_ptr_);
+    func_ptr_ = block_ptr_->copy_ptr(&func, dest);
   } else {
-    func_ptr_ = block_ptr_->move_ptr(&func, func_ptr_);
+    func_ptr_ = block_ptr_->move_ptr(&func, dest);
   }
+  uses_local_storage_ = (func_ptr_ == buffer_);
 }
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 template <typename F>
-auto FunctionBase<IsMoveOnly, Ret(Args...)>::Invoke(F* const func, Args... args) -> Ret {
-  return std::invoke(*func, std::forward<Args>(args)...);
+auto FunctionBase<IsMoveOnly, Ret(Args...)>::Invoke(void* func, Args... args) -> Ret {
+  return std::invoke(*static_cast<F*>(func), std::forward<Args>(args)...);
 }
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
@@ -326,18 +319,18 @@ auto FunctionBase<IsMoveOnly, Ret(Args...)>::operator()(Args... args) const -> R
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 FunctionBase<IsMoveOnly, Ret(Args...)>::~FunctionBase() {
-  if (!Empty() && block_ptr_->owns_func) {
-    block_ptr_->destroy_ptr(func_ptr_);
+  if (!Empty()) {
+    block_ptr_->destroy_ptr(func_ptr_, uses_local_storage_);
   }
 }
 
 template<bool IsMoveOnly, typename Ret, typename... Args>
 template <typename F>
-auto FunctionBase<IsMoveOnly, Ret(Args...)>::Destroy(F* func) -> void {
-  if constexpr (sizeof(F) < BUFFER_SIZE) {
-    func->~F();
+auto FunctionBase<IsMoveOnly, Ret(Args...)>::Destroy(void* func, bool uses_local_storage) -> void {
+  if (uses_local_storage) {
+    static_cast<F*>(func)->~F();
   } else {
-    delete func;
+    delete static_cast<F*>(func);
   }
 }
 
@@ -346,3 +339,4 @@ using Function = FunctionBase<false, T>;
 
 template<typename T>
 using MoveOnlyFunction = FunctionBase<true, T>;
+
