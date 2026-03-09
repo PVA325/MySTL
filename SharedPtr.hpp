@@ -10,7 +10,7 @@ class EnableSharedFromThis;
 template<typename T>
 class SharedPtr;
 
-namespace utils {
+namespace smartptr_traits {
   template<size_t N, typename... Args>
   struct get_type {};
 
@@ -63,12 +63,12 @@ public:
   template<typename... Args>
   explicit SharedPtr(Args&&... args) requires(
     sizeof...(Args) > 0 &&
-    (sizeof...(Args) != 1 || !utils::is_shared_ptr_v< std::decay_t<typename utils::get_type_t<0, Args...>> >)
+    (sizeof...(Args) != 1 || !smartptr_traits::is_shared_ptr_v< std::decay_t<typename smartptr_traits::get_type_t<0, Args...>> >)
   );
   template<typename Alloc, typename... Args>
   explicit SharedPtr(std::allocator_arg_t, Alloc alloc, Args&&... args) requires(
     sizeof...(Args) > 0 &&
-    (sizeof...(Args) != 1 || !utils::is_shared_ptr_v< std::decay_t<typename utils::get_type_t<0, Args...>> >)
+    (sizeof...(Args) != 1 || !smartptr_traits::is_shared_ptr_v< std::decay_t<typename smartptr_traits::get_type_t<0, Args...>> >)
   );
 
   SharedPtr(const SharedPtr& other);
@@ -211,7 +211,7 @@ template<typename T>
 template<typename... Args>
 SharedPtr<T>::SharedPtr(Args&&... args) requires(
   sizeof...(Args) > 0 &&
-  (sizeof...(Args) != 1 || !utils::is_shared_ptr_v< std::decay_t<typename utils::get_type_t<0, Args...>> >)
+  (sizeof...(Args) != 1 || !smartptr_traits::is_shared_ptr_v< std::decay_t<typename smartptr_traits::get_type_t<0, Args...>> >)
 ) {
   block_ptr_ = new ControlBlockMakeShared<T>(std::forward<Args>(args)...);
   ++block_ptr_->shared_cnt;
@@ -230,7 +230,7 @@ template<typename T>
 template<typename AllocT, typename... Args>
 SharedPtr<T>::SharedPtr(std::allocator_arg_t, AllocT alloc, Args &&... args) requires(
   sizeof...(Args) > 0 &&
-  (sizeof...(Args) != 1 || !utils::is_shared_ptr_v< std::decay_t<typename utils::get_type_t<0, Args...>> >)
+  (sizeof...(Args) != 1 || !smartptr_traits::is_shared_ptr_v< std::decay_t<typename smartptr_traits::get_type_t<0, Args...>> >)
 ) {
   using BlockMakeSharedAlloc = std::allocator_traits<AllocT>::template rebind_alloc< ControlBlockMakeShared<T, AllocT> >;
   BlockMakeSharedAlloc block_alloc(alloc);
