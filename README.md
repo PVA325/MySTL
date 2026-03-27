@@ -24,7 +24,6 @@ A type-safe union for holding one of several types.
 
 ## Features
 
-- Header-only implementation
 - STL-like interface
 - Allocator support
 - Iterators compatible with standard patterns
