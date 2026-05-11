@@ -1,6 +1,17 @@
 # MySTL
 
-**MySTL** is a collection of STL-like containers and utilities implemented in C++.
+A collection of STL-like containers and utilities implemented in C++.
+
+### Installation
+```bash
+git clone https://github.com/PVA325/MySTL.git
+cd MySTL
+cmake -B build
+sudo cmake --install build
+rm -rf build
+```
+
+### Author: PVA
 
 ## Implemented Components
 

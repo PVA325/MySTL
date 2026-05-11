@@ -1,6 +1,0 @@
-/home/uladzislau/Desktop/projects/c++/MySTL/build/CMakeFiles/edit_cache.dir
-/home/uladzislau/Desktop/projects/c++/MySTL/build/CMakeFiles/rebuild_cache.dir
-/home/uladzislau/Desktop/projects/c++/MySTL/build/CMakeFiles/list_install_components.dir
-/home/uladzislau/Desktop/projects/c++/MySTL/build/CMakeFiles/install.dir
-/home/uladzislau/Desktop/projects/c++/MySTL/build/CMakeFiles/install/local.dir
-/home/uladzislau/Desktop/projects/c++/MySTL/build/CMakeFiles/install/strip.dir
