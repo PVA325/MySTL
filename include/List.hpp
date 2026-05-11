@@ -1,3 +1,5 @@
+#pragma once
+
 #include <stdexcept>
 #include <exception>
 #include <memory>

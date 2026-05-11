@@ -1,0 +1,10 @@
+/home/uladzislau/my_install_dir/include/Variant.hpp
+/home/uladzislau/my_install_dir/include/UnorderedMap.hpp
+/home/uladzislau/my_install_dir/include/List.hpp
+/home/uladzislau/my_install_dir/include/SharedPtr.hpp
+/home/uladzislau/my_install_dir/include/Tuple.hpp
+/home/uladzislau/my_install_dir/include/MySTL.hpp
+/home/uladzislau/my_install_dir/include/Function.hpp
+/home/uladzislau/my_install_dir/lib/cmake/MySTL/MySTLTargets.cmake
+/home/uladzislau/my_install_dir/lib/cmake/MySTL/MySTLConfig.cmake
+/home/uladzislau/my_install_dir/lib/cmake/MySTL/MySTLConfigVersion.cmake
